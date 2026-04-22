@@ -1,0 +1,25 @@
+cd $HOME\Desktop\"BT HAUI"\"Luận án tốt nghệp"\cv-matching-system
+
+# Build và chạy tất cả
+docker compose up --build
+
+# Hoặc chạy nền (background)
+docker compose up --build -d
+
+# Kiểm tra tất cả đang chạy
+docker compose ps
+
+# Xem log backend
+docker compose logs backend -f
+
+# Xem log frontend
+docker compose logs frontend -f
+
+# Dừng tất cả
+docker compose down
+
+# Dừng và xóa data
+docker compose down -v
+
+# Restart 1 service
+docker compose restart backend

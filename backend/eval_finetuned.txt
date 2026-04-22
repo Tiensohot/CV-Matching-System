@@ -1,0 +1,47 @@
+MODEL   : models/sbert-cv-jd
+Test    : 1759 samples
+
+[Nhóm 1 — Phân loại tổng thể]
+Accuracy          : 0.5338
+F1 Macro          : 0.4442
+F1 Weighted       : 0.4993
+Precision Macro   : 0.4692
+Recall Macro      : 0.4834
+
+[Nhóm 1b — Good Fit riêng lẻ]
+Precision Good Fit: 0.4125
+Recall Good Fit   : 0.6638
+F1 Good Fit       : 0.5088
+
+[Nhóm 2 — Chất lượng Embedding]
+Pearson r         : 0.4649
+Spearman r        : 0.4473
+MAE               : 0.3238
+RMSE              : 0.3998
+
+[Ngưỡng tối ưu]
+Good Fit          >= 0.65
+Potential Fit     >= 0.60
+Accuracy          :  53.38%
+
+[Phân bố Similarity]
+Good Fit         mean=0.6721  std=0.1463  min=-0.0942  max=0.9436
+Potential Fit    mean=0.6095  std=0.1885  min=-0.0403  max=0.9434
+No Fit           mean=0.3651  std=0.3183  min=-0.2058  max=0.9313
+
+[Confusion Matrix]
+                      Good Fit       Pot.Fit        No Fit
+  Actual Good Fit           304            33           121
+  Actual Pot.Fit            220            42           182
+  Actual No Fit             213            51           593
+
+[Classification Report]
+               precision    recall  f1-score   support
+
+     Good Fit       0.41      0.66      0.51       458
+Potential Fit       0.33      0.09      0.15       444
+       No Fit       0.66      0.69      0.68       857
+
+     accuracy                           0.53      1759
+    macro avg       0.47      0.48      0.44      1759
+ weighted avg       0.51      0.53      0.50      1759
