@@ -1,5 +1,7 @@
+import json
 import math
 import re
+import httpx
 from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import OAuth2PasswordRequestForm
@@ -244,6 +246,65 @@ def _parse_jd_text(raw: str) -> dict:
     return {"title": title, "description": description, "requirements": requirements}
 
 
+async def _parse_jd_groq(raw: str) -> dict:
+    """
+    Dùng Groq LLM để parse JD thành dữ liệu sạch tối ưu cho SBERT matching.
+    requirements trả về dạng comma-separated skills thuần túy — không có noise token.
+    """
+    prompt = f"""You are a job description parser for an AI resume matching system.
+Extract structured data from the job posting below and return ONLY a JSON object with exactly 3 keys:
+
+"title": The job title (concise string, e.g. "AI/ML Engineer")
+
+"description": 2–4 sentence summary of key responsibilities.
+  - Dense, factual prose — no bullet points, no headers
+  - Focus on what the person will actually do
+
+"requirements": Comma-separated technical skills and tools ONLY.
+  INCLUDE: programming languages, frameworks, libraries, platforms, methodologies, tools
+  EXCLUDE: years of experience, soft skills, degree requirements, company benefits, filler phrases
+  FORMAT EXAMPLE: "Python, PyTorch, NLP, Computer Vision, MLOps, CUDA, SQL"
+  Maximum 15 items. Each item max 3 words.
+
+Job posting (first 3000 chars):
+{raw[:3000]}
+
+Return valid JSON only. No markdown, no explanation."""
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "llama-3.1-8b-instant",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 512,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    raw_content = data["choices"][0]["message"]["content"].strip()
+
+    # Strip markdown code fences nếu model trả về ```json ... ```
+    raw_content = re.sub(r"^```(?:json)?\s*", "", raw_content)
+    raw_content = re.sub(r"\s*```$", "", raw_content)
+
+    parsed = json.loads(raw_content)
+
+    if not all(k in parsed for k in ("title", "description", "requirements")):
+        raise ValueError(f"Groq response missing required fields: {list(parsed.keys())}")
+
+    return {
+        "title"       : str(parsed["title"]).strip(),
+        "description" : str(parsed["description"]).strip(),
+        "requirements": str(parsed["requirements"]).strip(),
+    }
+
+
 class JDParseRequest(BaseModel):
     raw_text: str
 
@@ -253,11 +314,23 @@ async def parse_jd_text(
     data : JDParseRequest,
     email: str = Depends(verify_token)
 ):
-    """Parse raw JD text and return extracted title, description, requirements."""
+    """
+    Parse raw JD text → title, description, requirements.
+    Ưu tiên Groq LLM (dữ liệu sạch hơn cho matching).
+    Fallback về regex nếu Groq lỗi hoặc chưa cấu hình API key.
+    """
     if not data.raw_text.strip():
         raise HTTPException(status_code=400, detail="raw_text is empty")
+
+    if settings.GROQ_API_KEY:
+        try:
+            result = await _parse_jd_groq(data.raw_text)
+            return {**result, "parser": "groq"}
+        except Exception as e:
+            print(f"[parse-jd] Groq failed ({e}), falling back to regex")
+
     result = _parse_jd_text(data.raw_text)
-    return result
+    return {**result, "parser": "regex"}
 
 
 # ── Job Descriptions ──────────────────────────────────────
