@@ -6,7 +6,8 @@ from sqlalchemy import select, text
 from app.services.rag_service import analyze_cv_vs_jd
 from app.models.schemas import AnalysisResponse
 from app.core.database import get_db
-from app.models.models import JobDescription, CV
+from app.core.auth import get_current_user
+from app.models.models import JobDescription, CV, User
 from sqlalchemy import select, text, func
 import math
 from app.models.schemas import JDResponse, JDMatchResponse, JDCreate
@@ -44,14 +45,17 @@ async def create_job(jd: JDCreate, db: AsyncSession = Depends(get_db)):
 
 @router.get("/match", response_model=List[JDMatchResponse])
 async def match_jobs(
-    cv_id: UUID = Query(...),
-    top_k: int  = Query(10),
-    db   : AsyncSession = Depends(get_db)
+    cv_id       : UUID = Query(...),
+    top_k       : int  = Query(10),
+    db          : AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
         cv = await db.get(CV, cv_id)
         if not cv:
             raise HTTPException(status_code=404, detail="CV not found")
+        if cv.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="CV không thuộc về bạn")
         if cv.embedding is None:
             raise HTTPException(status_code=400, detail="CV has no embedding")
 
@@ -88,11 +92,9 @@ async def match_jobs(
     except HTTPException:
         raise
     except Exception as e:
-        # In lỗi rõ ràng ra terminal
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-    
 @router.get("/all")
 async def get_all_jobs(
     page  : int = Query(1,  ge=1),
@@ -142,14 +144,17 @@ async def get_job(jd_id: UUID, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{jd_id}/analyze", response_model=AnalysisResponse)
 async def analyze_job(
-    jd_id   : UUID,
-    cv_id   : UUID,
-    language: str  = Query('vi'),
-    db      : AsyncSession = Depends(get_db)
+    jd_id       : UUID,
+    cv_id       : UUID,
+    language    : str  = Query('vi'),
+    db          : AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     cv = await db.get(CV, cv_id)
     if not cv:
         raise HTTPException(status_code=404, detail="CV not found")
+    if cv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="CV không thuộc về bạn")
     if not cv.raw_text:
         raise HTTPException(status_code=400, detail="CV has no text")
 
@@ -174,4 +179,3 @@ async def analyze_job(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
-    

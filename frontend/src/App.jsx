@@ -111,6 +111,16 @@ const I18N = {
     nav_browse: 'Browse jobs', nav_history: 'My applications',
     nav_login: 'Login', nav_register: 'Register', nav_logout: 'Logout',
     nav_start_over: 'Start over', lang_toggle: 'Language',
+    // Landing gate
+    gate_badge: 'Your Personal Career Assistant',
+    gate_h1a: 'Your CV. Your jobs.', gate_h1b: 'Completely private.',
+    gate_desc: 'Sign in to unlock AI-powered CV matching. Each account has its own private vault — your CVs and applications are yours alone.',
+    gate_login_btn: 'Sign in to get started',
+    gate_register_btn: 'Create free account',
+    gate_feat1_t: 'Private vault', gate_feat1_d: 'Your CVs and applications are only visible to you.',
+    gate_feat2_t: 'AI matching', gate_feat2_d: 'Fine-tuned SBERT ranks jobs by semantic similarity.',
+    gate_feat3_t: 'One-click apply', gate_feat3_d: 'Send your CV directly to employers via email.',
+    gate_session_exp: 'Your session has expired. Please log in again.',
     // Upload hero
     upload_badge: 'AI-Powered Career Matching',
     upload_hero_h1a: 'Find your', upload_hero_h1b: 'perfect job',
@@ -210,6 +220,16 @@ const I18N = {
     nav_browse: 'Xem việc làm', nav_history: 'Lịch sử ứng tuyển',
     nav_login: 'Đăng nhập', nav_register: 'Đăng ký', nav_logout: 'Đăng xuất',
     nav_start_over: 'Bắt đầu lại', lang_toggle: 'Ngôn ngữ',
+    // Landing gate
+    gate_badge: 'Trợ lý nghề nghiệp cá nhân của bạn',
+    gate_h1a: 'CV của bạn. Việc làm của bạn.', gate_h1b: 'Hoàn toàn riêng tư.',
+    gate_desc: 'Đăng nhập để dùng AI matching CV. Mỗi tài khoản có kho riêng — CV và đơn ứng tuyển của bạn chỉ mình bạn thấy.',
+    gate_login_btn: 'Đăng nhập để bắt đầu',
+    gate_register_btn: 'Tạo tài khoản miễn phí',
+    gate_feat1_t: 'Kho riêng tư', gate_feat1_d: 'CV và đơn ứng tuyển của bạn chỉ bạn mới thấy được.',
+    gate_feat2_t: 'AI matching', gate_feat2_d: 'SBERT tinh chỉnh xếp hạng việc làm theo độ tương đồng ngữ nghĩa.',
+    gate_feat3_t: 'Ứng tuyển một chạm', gate_feat3_d: 'Gửi CV trực tiếp đến nhà tuyển dụng qua email.',
+    gate_session_exp: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
     // Upload hero
     upload_badge: 'AI-Powered Career Matching',
     upload_hero_h1a: 'Tìm', upload_hero_h1b: 'việc làm phù hợp',
@@ -336,6 +356,86 @@ const Steps = ({ current }) => {
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+
+// ── Landing Gate (chưa đăng nhập) ──────────────────────
+const LandingGate = ({ onLogin, onRegister }) => {
+  const { L } = useLang()
+  const features = [
+    { icon: '🔒', title: L.gate_feat1_t, desc: L.gate_feat1_d },
+    { icon: '🤖', title: L.gate_feat2_t, desc: L.gate_feat2_d },
+    { icon: '📧', title: L.gate_feat3_t, desc: L.gate_feat3_d },
+  ]
+  return (
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-4 py-16 relative overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #0f172a 100%)' }}
+    >
+      {/* Background grid */}
+      <div className="absolute inset-0 opacity-10" style={{
+        backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
+        backgroundSize: '40px 40px'
+      }}/>
+      {/* Glow blobs */}
+      <div className="absolute top-20 right-1/4 w-96 h-96 rounded-full opacity-10 pointer-events-none"
+        style={{ background: '#3b82f6', filter: 'blur(80px)' }}/>
+      <div className="absolute bottom-10 left-1/4 w-64 h-64 rounded-full opacity-10 pointer-events-none"
+        style={{ background: '#6366f1', filter: 'blur(60px)' }}/>
+
+      <div className="relative z-10 text-center max-w-2xl mx-auto">
+        {/* Badge */}
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-blue-400
+            border-opacity-40 bg-blue-500 bg-opacity-10 mb-8">
+          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"/>
+          <span className="text-xs text-blue-300 font-medium">{L.gate_badge}</span>
+        </div>
+
+        {/* Heading */}
+        <h1 className="text-4xl sm:text-5xl font-semibold text-white leading-tight mb-4">
+          {L.gate_h1a}<br/>
+          <span style={{ color: '#60a5fa' }}>{L.gate_h1b}</span>
+        </h1>
+        <p className="text-base text-gray-300 leading-relaxed mb-10 max-w-lg mx-auto">
+          {L.gate_desc}
+        </p>
+
+        {/* CTA buttons */}
+        <div className="flex flex-col sm:flex-row gap-3 justify-center mb-14">
+          <button
+            id="gate-login-btn"
+            onClick={onLogin}
+            className="px-8 py-3.5 rounded-full bg-blue-600 text-white font-medium text-sm hover:bg-blue-700
+              transition-all duration-200 shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
+          >
+            {L.gate_login_btn}
+          </button>
+          <button
+            id="gate-register-btn"
+            onClick={onRegister}
+            className="px-8 py-3.5 rounded-full border border-white border-opacity-20 text-white font-medium text-sm
+              hover:bg-white hover:bg-opacity-10 transition-all duration-200 hover:-translate-y-0.5"
+          >
+            {L.gate_register_btn}
+          </button>
+        </div>
+
+        {/* Feature cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {features.map((f, i) => (
+            <div key={i}
+              className="rounded-2xl p-5 text-left border border-white border-opacity-10"
+              style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(8px)' }}
+            >
+              <div className="text-2xl mb-3">{f.icon}</div>
+              <p className="text-sm font-medium text-white mb-1">{f.title}</p>
+              <p className="text-xs text-gray-400 leading-relaxed">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -1997,6 +2097,19 @@ export default function App() {
   })
   const [showAuth,    setShowAuth]    = useState(null) // 'login' | 'register' | null
 
+  // Lắng nghe event session hết hạn (401) từ Axios interceptor
+  useEffect(() => {
+    const handleExpired = () => {
+      setCurrentUser(null)
+      setCvData(null)
+      setJobs([])
+      setStep(0)
+      showToast('error', L.gate_session_exp)
+    }
+    window.addEventListener('cv_auth_expired', handleExpired)
+    return () => window.removeEventListener('cv_auth_expired', handleExpired)
+  }, [L])
+
   // Apply modal state
   const [applyTarget, setApplyTarget] = useState(null) // { job, source }
   const [toast,       setToast]       = useState(null)
@@ -2014,6 +2127,9 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null)
+    setCvData(null)
+    setJobs([])
+    setStep(0)
     localStorage.removeItem('cv_user')
     localStorage.removeItem('cv_token')
   }
@@ -2081,7 +2197,7 @@ export default function App() {
               {L.nav_browse}
             </button>
 
-            {cvData && (
+            {currentUser && cvData && (
               <button
                 onClick={() => setShowHistory(true)}
                 className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5"
@@ -2148,9 +2264,17 @@ export default function App() {
 
       {/* Main content */}
       <main>
-        {fetching && <LoadingScreen/>}
+        {/* Gate: bắt buộc đăng nhập trước khi dùng */}
+        {!currentUser && !showAuth && (
+          <LandingGate
+            onLogin={() => setShowAuth('login')}
+            onRegister={() => setShowAuth('register')}
+          />
+        )}
 
-        {!fetching && step === 0 && (
+        {currentUser && fetching && <LoadingScreen/>}
+
+        {currentUser && !fetching && step === 0 && (
           <UploadScreen
             onSuccess={handleUploadSuccess}
             cvData={cvData}
@@ -2168,7 +2292,7 @@ export default function App() {
           />
         )}
 
-        {!fetching && step === 1 && (
+        {currentUser && !fetching && step === 1 && (
           <ResultsScreen
             cvData={cvData}
             jobs={jobs}
@@ -2178,7 +2302,7 @@ export default function App() {
           />
         )}
 
-        {!fetching && step === 2 && selectedJob && (
+        {currentUser && !fetching && step === 2 && selectedJob && (
           <AnalysisScreen
             cvData={cvData}
             jobs={jobs}

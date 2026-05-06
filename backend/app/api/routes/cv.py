@@ -3,13 +3,13 @@ import shutil
 from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select  
+from sqlalchemy import select
 from app.core.database import get_db
-from app.models.models import CV
+from app.core.auth import get_current_user
+from app.models.models import CV, Application, User
 from app.models.schemas import CVResponse
 from app.services.cv_service import extract_text, clean_text
 from app.services.matching_service import get_embedding
-from app.models.models import CV, Application
 from sqlalchemy import delete as sql_delete
 
 router = APIRouter(prefix="/cv", tags=["CV"])
@@ -21,9 +21,10 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.post("/upload", response_model=CVResponse)
 async def upload_cv(
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Upload CV (PDF hoặc Word) và lưu vào database"""
+    """Upload CV (PDF hoặc Word) và lưu vào database — yêu cầu đăng nhập"""
 
     # Kiểm tra định dạng file
     allowed = [".pdf", ".docx", ".doc"]
@@ -46,11 +47,12 @@ async def upload_cv(
     # Tạo vector embedding
     embedding = get_embedding(cleaned_text)
 
-    # Lưu vào database
+    # Lưu vào database — gán user_id của user đang đăng nhập
     cv = CV(
+        user_id=current_user.id,
         filename=file.filename,
         raw_text=cleaned_text,
-        embedding=embedding
+        embedding=embedding,
     )
     db.add(cv)
     await db.commit()
@@ -58,10 +60,17 @@ async def upload_cv(
 
     return cv
 
+
 @router.get("/all")
-async def get_all_cvs(db: AsyncSession = Depends(get_db)):
+async def get_all_cvs(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lấy danh sách CV của user đang đăng nhập"""
     result = await db.execute(
-        select(CV).order_by(CV.uploaded_at.desc())
+        select(CV)
+        .where(CV.user_id == current_user.id)
+        .order_by(CV.uploaded_at.desc())
     )
     cvs = result.scalars().all()
     return [
@@ -74,21 +83,35 @@ async def get_all_cvs(db: AsyncSession = Depends(get_db)):
         for cv in cvs
     ]
 
+
 @router.get("/{cv_id}", response_model=CVResponse)
-async def get_cv(cv_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Lấy thông tin CV theo ID"""
+async def get_cv(
+    cv_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lấy thông tin CV theo ID — chỉ được xem CV của chính mình"""
     cv = await db.get(CV, cv_id)
     if not cv:
         raise HTTPException(status_code=404, detail="Không tìm thấy CV")
+    if cv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập CV này")
     return cv
 
+
 @router.delete("/{cv_id}")
-async def delete_cv(cv_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Xóa CV khỏi database và file uploads"""
+async def delete_cv(
+    cv_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Xóa CV khỏi database và file uploads — chỉ được xóa CV của chính mình"""
 
     cv = await db.get(CV, cv_id)
     if not cv:
         raise HTTPException(status_code=404, detail="CV not found")
+    if cv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền xóa CV này")
 
     # Xóa file vật lý nếu có
     file_path = os.path.join("uploads", cv.filename)

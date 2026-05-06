@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.models import CV
+from app.core.auth import get_current_user
+from app.models.models import CV, User
 from app.models.schemas import AnalysisResponse
 from app.services.remote_job_service import fetch_remote_jobs, match_cv_with_remote_jobs
 from app.services.rag_service import analyze_cv_vs_jd
@@ -26,12 +27,15 @@ class RemoteMatchRequest(BaseModel):
 
 @router.post("/match")
 async def match_remote_jobs(
-    body: RemoteMatchRequest,
-    db  : AsyncSession = Depends(get_db),
+    body        : RemoteMatchRequest,
+    db          : AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     cv = await db.get(CV, body.cv_id)
     if not cv:
         raise HTTPException(status_code=404, detail="CV not found")
+    if cv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="CV không thuộc về bạn")
     if cv.embedding is None:
         raise HTTPException(status_code=400, detail="CV embedding not available")
 
@@ -61,12 +65,15 @@ class RemoteAnalyzeRequest(BaseModel):
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_remote_job(
-    body: RemoteAnalyzeRequest,
-    db  : AsyncSession = Depends(get_db),
+    body        : RemoteAnalyzeRequest,
+    db          : AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     cv = await db.get(CV, body.cv_id)
     if not cv:
         raise HTTPException(status_code=404, detail="CV not found")
+    if cv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="CV không thuộc về bạn")
     if not cv.raw_text:
         raise HTTPException(status_code=400, detail="CV text not available")
 

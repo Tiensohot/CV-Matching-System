@@ -18,6 +18,9 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     created_at      = Column(DateTime, default=datetime.utcnow)
 
+    cvs          = relationship("CV",          back_populates="user")
+    applications = relationship("Application", back_populates="user")
+
 
 class Employer(Base):
     __tablename__ = "employers"
@@ -34,14 +37,14 @@ class Employer(Base):
 class JobDescription(Base):
     __tablename__ = "job_descriptions"
 
-    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    employer_id = Column(UUID(as_uuid=True), ForeignKey("employers.id"))
-    title       = Column(String(255), nullable=False)
-    description = Column(Text)
+    id           = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employer_id  = Column(UUID(as_uuid=True), ForeignKey("employers.id"))
+    title        = Column(String(255), nullable=False)
+    description  = Column(Text)
     requirements = Column(Text)
-    email       = Column(String(255), nullable=True)   # email nhà tuyển dụng
-    embedding   = Column(Vector(768))
-    created_at  = Column(DateTime, default=datetime.utcnow)
+    email        = Column(String(255), nullable=True)   # email nhà tuyển dụng
+    embedding    = Column(Vector(768))
+    created_at   = Column(DateTime, default=datetime.utcnow)
 
     employer     = relationship("Employer", back_populates="job_descriptions")
     applications = relationship("Application", back_populates="job_description")
@@ -51,11 +54,13 @@ class CV(Base):
     __tablename__ = "cvs"
 
     id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id     = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
     filename    = Column(String(255), nullable=False)
     raw_text    = Column(Text)
     embedding   = Column(Vector(768))
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
+    user         = relationship("User", back_populates="cvs", foreign_keys=[user_id])
     applications = relationship("Application", back_populates="cv")
 
 
@@ -63,6 +68,7 @@ class Application(Base):
     __tablename__ = "applications"
 
     id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id    = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
     cv_id      = Column(UUID(as_uuid=True), ForeignKey("cvs.id"))
     jd_id      = Column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=True)
     score      = Column(Float)
@@ -79,5 +85,6 @@ class Application(Base):
     job_title       = Column(String(255), nullable=True)
     company_name    = Column(String(255), nullable=True)
 
-    cv              = relationship("CV", back_populates="applications")
+    user            = relationship("User", back_populates="applications", foreign_keys=[user_id])
+    cv              = relationship("CV",  back_populates="applications")
     job_description = relationship("JobDescription", back_populates="applications")

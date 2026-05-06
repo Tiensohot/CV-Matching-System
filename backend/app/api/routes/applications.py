@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
-from app.models.models import Application, CV, JobDescription, Employer
+from app.core.auth import get_current_user
+from app.models.models import Application, CV, JobDescription, Employer, User
 from app.models.schemas import ApplicationResponse
 from app.services.matching_service import cosine_similarity
 
@@ -17,17 +18,20 @@ router = APIRouter(prefix="/applications", tags=["Applications"])
 UPLOAD_DIR = "uploads"
 
 
-# ── Existing endpoint: apply by jd_id (không thay đổi) ───────────────────────
+# ── Apply by jd_id ────────────────────────────────────────────────────────────
 @router.post("/{jd_id}/apply", response_model=ApplicationResponse)
 async def apply_job(
     jd_id         : UUID,
     cv_id         : UUID,
     candidate_name: str = Query("Candidate"),
-    db            : AsyncSession = Depends(get_db)
+    db            : AsyncSession = Depends(get_db),
+    current_user  : User = Depends(get_current_user),
 ):
     cv = await db.get(CV, cv_id)
     if not cv:
         raise HTTPException(status_code=404, detail="CV not found")
+    if cv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="CV không thuộc về bạn")
 
     job = await db.get(JobDescription, jd_id)
     if not job:
@@ -36,7 +40,7 @@ async def apply_job(
     existing = await db.execute(
         select(Application).where(
             Application.cv_id == cv_id,
-            Application.jd_id == jd_id
+            Application.jd_id == jd_id,
         )
     )
     if existing.scalar_one_or_none():
@@ -50,10 +54,11 @@ async def apply_job(
         score = cosine_similarity(cv.embedding, job.embedding)
 
     application = Application(
-        cv_id =cv_id,
-        jd_id =jd_id,
-        score =score,
-        status="sent"
+        user_id=current_user.id,
+        cv_id  =cv_id,
+        jd_id  =jd_id,
+        score  =score,
+        status ="sent",
     )
     db.add(application)
     await db.commit()
@@ -61,7 +66,7 @@ async def apply_job(
     return application
 
 
-# ── New endpoint: apply with email ───────────────────────────────────────────
+# ── Apply with email ─────────────────────────────────────────────────────────
 class ApplyWithEmailBody(BaseModel):
     cv_id          : UUID
     jd_id          : Optional[UUID]  = None
@@ -81,12 +86,16 @@ async def apply_with_email(
     body            : ApplyWithEmailBody,
     background_tasks: BackgroundTasks,
     db              : AsyncSession = Depends(get_db),
+    current_user    : User = Depends(get_current_user),
 ):
     cv = await db.get(CV, body.cv_id)
     if not cv:
         raise HTTPException(status_code=404, detail="CV not found")
+    if cv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="CV không thuộc về bạn")
 
     application = Application(
+        user_id        = current_user.id,
         cv_id          = body.cv_id,
         jd_id          = body.jd_id,
         score          = body.matching_score,
@@ -154,16 +163,27 @@ async def _send_email_and_update(
                 await db.commit()
 
 
-# ── Existing endpoints (không thay đổi) ──────────────────────────────────────
+# ── Get application history (chỉ của user hiện tại) ──────────────────────────
 @router.get("/history/{cv_id}")
 async def get_application_history(
-    cv_id: UUID,
-    db   : AsyncSession = Depends(get_db)
+    cv_id       : UUID,
+    db          : AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    # Kiểm tra CV thuộc user
+    cv = await db.get(CV, cv_id)
+    if not cv:
+        raise HTTPException(status_code=404, detail="CV not found")
+    if cv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="CV không thuộc về bạn")
+
     result = await db.execute(
         select(Application, JobDescription)
         .join(JobDescription, Application.jd_id == JobDescription.id)
-        .where(Application.cv_id == cv_id)
+        .where(
+            Application.cv_id   == cv_id,
+            Application.user_id == current_user.id,
+        )
         .order_by(Application.applied_at.desc())
     )
     rows = result.all()
@@ -186,11 +206,22 @@ async def get_application_history(
 
 @router.get("/cv/{cv_id}", response_model=list[ApplicationResponse])
 async def get_applications_by_cv(
-    cv_id: UUID,
-    db   : AsyncSession = Depends(get_db)
+    cv_id       : UUID,
+    db          : AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    # Kiểm tra CV thuộc user
+    cv = await db.get(CV, cv_id)
+    if not cv:
+        raise HTTPException(status_code=404, detail="CV not found")
+    if cv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="CV không thuộc về bạn")
+
     result = await db.execute(
-        select(Application).where(Application.cv_id == cv_id)
+        select(Application).where(
+            Application.cv_id   == cv_id,
+            Application.user_id == current_user.id,
+        )
     )
     return result.scalars().all()
 
@@ -199,11 +230,14 @@ async def get_applications_by_cv(
 async def update_application_status(
     application_id: UUID,
     status        : str,
-    db            : AsyncSession = Depends(get_db)
+    db            : AsyncSession = Depends(get_db),
+    current_user  : User = Depends(get_current_user),
 ):
     app = await db.get(Application, application_id)
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
+    if app.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Không có quyền thay đổi application này")
 
     allowed = ["pending", "sent", "viewed", "interview", "rejected", "accepted"]
     if status not in allowed:

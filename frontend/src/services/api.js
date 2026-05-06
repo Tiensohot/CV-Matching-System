@@ -5,7 +5,34 @@ const API = axios.create({
   timeout: 60000,
 })
 
-// ── CV ───────────────────────────────────────────────────
+// ── Request interceptor: tự động gắn Bearer token ────────────────────────────
+API.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('cv_token')
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+// ── Response interceptor: xử lý 401 → logout ─────────────────────────────────
+API.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token hết hạn hoặc không hợp lệ → xóa session
+      localStorage.removeItem('cv_token')
+      localStorage.removeItem('cv_user')
+      // Dispatch custom event để App.jsx bắt và logout
+      window.dispatchEvent(new CustomEvent('cv_auth_expired'))
+    }
+    return Promise.reject(error)
+  }
+)
+
+// ── CV ────────────────────────────────────────────────────────────────────────
 export const uploadCV = (file) => {
   const formData = new FormData()
   formData.append('file', file)
@@ -23,7 +50,7 @@ export const getAllCVs = () =>
 export const deleteCV = (cvId) =>
   API.delete(`/cv/${cvId}`)
 
-// ── Jobs ─────────────────────────────────────────────────
+// ── Jobs ──────────────────────────────────────────────────────────────────────
 export const matchJobs = (cvId, topK = 10) =>
   API.get('/jobs/match', { params: { cv_id: cvId, top_k: topK } })
 
@@ -36,7 +63,7 @@ export const getAllJobs = (page = 1, limit = 20) =>
 export const analyzeJob = (jdId, cvId, language = 'vi') =>
   API.post(`/jobs/${jdId}/analyze`, null, { params: { cv_id: cvId, language } })
 
-// ── Remote Jobs ───────────────────────────────────────────
+// ── Remote Jobs ───────────────────────────────────────────────────────────────
 export const matchRemoteJobs = (cvId, country = null) =>
   API.post('/remote-jobs/match', { cv_id: cvId, country })
 
@@ -53,7 +80,7 @@ export const analyzeRemoteJob = (cvId, job, language = 'en') =>
     language,
   })
 
-// ── Applications ─────────────────────────────────────────
+// ── Applications ──────────────────────────────────────────────────────────────
 export const applyJob = (jdId, cvId) =>
   API.post(`/applications/${jdId}/apply`, null, { params: { cv_id: cvId } })
 
@@ -66,7 +93,7 @@ export const getApplicationHistory = (cvId) =>
 export const updateApplicationStatus = (applicationId, status) =>
   API.patch(`/applications/${applicationId}/status`, null, { params: { status } })
 
-// ── Auth ─────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
 export const registerUser = (name, email, password) =>
   API.post('/auth/register', { name, email, password })
 
