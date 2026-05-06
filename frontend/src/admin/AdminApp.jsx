@@ -3,13 +3,13 @@ import {
   adminLogin, adminGetStats, adminGetJobs,
   adminCreateJob, adminUpdateJob, adminDeleteJob,
   adminGetEmployers, adminCreateEmployer, adminDeleteEmployer,
-  adminGetApps, adminDeleteApp, adminParseJD
+  adminGetApps, adminDeleteApp, adminGetUserSummary, adminParseJD
 } from './api'
 
 // ── Login Screen ─────────────────────────────────────────
 const LoginScreen = ({ onLogin }) => {
-  const [email,    setEmail]    = useState('admin@cvmatching.com')
-  const [password, setPassword] = useState('admin123')
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
   const [error,    setError]    = useState('')
   const [loading,  setLoading]  = useState(false)
 
@@ -131,7 +131,7 @@ const JobsManager = () => {
   const [showForm,   setShowForm]   = useState(false)
   const [editJob,    setEditJob]    = useState(null)
   const [form,       setForm]       = useState({
-    title:'', description:'', requirements:'', employer_id:''
+    title:'', description:'', requirements:'', employer_id:'', email:''
   })
   const [showParser, setShowParser] = useState(false)
   const [rawText,    setRawText]    = useState('')
@@ -156,7 +156,7 @@ const JobsManager = () => {
         await adminCreateJob(form)
       }
       setShowForm(false); setEditJob(null)
-      setForm({ title:'', description:'', requirements:'', employer_id:'' })
+      setForm({ title:'', description:'', requirements:'', employer_id:'', email:'' })
       load()
     } catch { alert('Failed to save') }
   }
@@ -172,7 +172,8 @@ const JobsManager = () => {
       title       : job.title,
       description : job.description,
       requirements: job.requirements,
-      employer_id : job.employer_id || ''
+      employer_id : job.employer_id || '',
+      email       : job.email || ''
     })
     setShowForm(true)
   }
@@ -206,7 +207,7 @@ const JobsManager = () => {
         <button onClick={() => {
             setShowForm(true); setEditJob(null)
             setShowParser(false); setRawText(''); setParseMsg('')
-            setForm({ title:'', description:'', requirements:'', employer_id:'' })
+            setForm({ title:'', description:'', requirements:'', employer_id:'', email:'' })
           }}
           className="text-xs px-4 py-2 bg-blue-700 text-white rounded-lg
                      hover:bg-blue-800">
@@ -291,8 +292,22 @@ const JobsManager = () => {
               placeholder="Requirements (comma separated)" rows={2}
               className="w-full px-3 py-2 text-sm border border-gray-200
                          rounded-lg focus:outline-none focus:border-blue-400"/>
+            <input value={form.email}
+              onChange={e => setForm({...form, email: e.target.value})}
+              placeholder="Employer email (optional — auto-filled on Apply)"
+              type="email"
+              className="w-full px-3 py-2 text-sm border border-gray-200
+                         rounded-lg focus:outline-none focus:border-blue-400"/>
             <select value={form.employer_id}
-              onChange={e => setForm({...form, employer_id: e.target.value})}
+              onChange={e => {
+                const empId = e.target.value
+                const emp = employers.find(em => em.id === empId)
+                setForm(prev => ({
+                  ...prev,
+                  employer_id: empId,
+                  email: prev.email || (emp ? emp.email : '')
+                }))
+              }}
               className="w-full px-3 py-2 text-sm border border-gray-200
                          rounded-lg focus:outline-none focus:border-blue-400">
               <option value="">Select employer</option>
@@ -310,6 +325,7 @@ const JobsManager = () => {
             <button onClick={() => {
                 setShowForm(false); setEditJob(null)
                 setShowParser(false); setRawText(''); setParseMsg('')
+                setForm({ title:'', description:'', requirements:'', employer_id:'', email:'' })
               }}
               className="px-4 py-2 border border-gray-200 text-sm rounded-lg
                          hover:bg-gray-50">
@@ -329,6 +345,8 @@ const JobsManager = () => {
               <th className="text-left px-4 py-3 text-xs font-medium
                              text-gray-500 hidden md:table-cell">Description</th>
               <th className="text-left px-4 py-3 text-xs font-medium
+                             text-gray-500 hidden lg:table-cell">Email</th>
+              <th className="text-left px-4 py-3 text-xs font-medium
                              text-gray-500">Created</th>
               <th className="px-4 py-3"/>
             </tr>
@@ -342,6 +360,11 @@ const JobsManager = () => {
                 <td className="px-4 py-3 text-gray-500 text-xs
                                hidden md:table-cell max-w-xs truncate">
                   {job.description}
+                </td>
+                <td className="px-4 py-3 text-xs hidden lg:table-cell">
+                  {job.email
+                    ? <span className="text-green-600">{job.email}</span>
+                    : <span className="text-gray-300">—</span>}
                 </td>
                 <td className="px-4 py-3 text-gray-400 text-xs">
                   {new Date(job.created_at).toLocaleDateString()}
@@ -493,9 +516,13 @@ const EmployersManager = () => {
 
 // ── Applications Manager ──────────────────────────────────
 const ApplicationsManager = () => {
-  const [apps,  setApps]  = useState([])
-  const [page,  setPage]  = useState(1)
-  const [pages, setPages] = useState(1)
+  const [view,        setView]        = useState('list')   // 'list' | 'by-user'
+  const [apps,        setApps]        = useState([])
+  const [page,        setPage]        = useState(1)
+  const [pages,       setPages]       = useState(1)
+  const [userSummary, setUserSummary] = useState([])
+  const [loadingUser, setLoadingUser] = useState(false)
+  const [expanded,    setExpanded]    = useState({})       // { [name]: bool }
 
   const STATUS_COLOR = {
     pending  : 'bg-gray-100 text-gray-600',
@@ -506,89 +533,215 @@ const ApplicationsManager = () => {
     rejected : 'bg-red-50 text-red-500',
   }
 
-  const load = () => {
+  const loadList = () => {
     adminGetApps(page).then(r => {
       setApps(r.data.applications)
       setPages(r.data.pages)
     })
   }
-  useEffect(() => { load() }, [page])
+
+  const loadUserSummary = () => {
+    setLoadingUser(true)
+    adminGetUserSummary()
+      .then(r => setUserSummary(r.data))
+      .finally(() => setLoadingUser(false))
+  }
+
+  useEffect(() => { loadList() }, [page])
+
+  useEffect(() => {
+    if (view === 'by-user' && userSummary.length === 0) loadUserSummary()
+  }, [view])
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete application?')) return
-    await adminDeleteApp(id); load()
+    await adminDeleteApp(id)
+    loadList()
+    loadUserSummary()
   }
+
+  const toggleExpand = (name) =>
+    setExpanded(prev => ({ ...prev, [name]: !prev[name] }))
 
   return (
     <div>
-      <h2 className="text-lg font-medium text-gray-800 mb-5">Applications</h2>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-100">
-            <tr>
-              <th className="text-left px-4 py-3 text-xs font-medium
-                             text-gray-500">CV File</th>
-              <th className="text-left px-4 py-3 text-xs font-medium
-                             text-gray-500">Job</th>
-              <th className="text-left px-4 py-3 text-xs font-medium
-                             text-gray-500">Score</th>
-              <th className="text-left px-4 py-3 text-xs font-medium
-                             text-gray-500">Status</th>
-              <th className="text-left px-4 py-3 text-xs font-medium
-                             text-gray-500">Date</th>
-              <th className="px-4 py-3"/>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {apps.map(app => (
-              <tr key={app.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-xs text-gray-600 max-w-32 truncate">
-                  {app.cv_file}
-                </td>
-                <td className="px-4 py-3 text-xs font-medium text-gray-800
-                               max-w-40 truncate">
-                  {app.job_title}
-                </td>
-                <td className="px-4 py-3 text-xs font-medium text-blue-600">
-                  {app.score}%
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium
-                    ${STATUS_COLOR[app.status] || STATUS_COLOR.pending}`}>
-                    {app.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-xs text-gray-400">
-                  {new Date(app.applied_at).toLocaleDateString()}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button onClick={() => handleDelete(app.id)}
-                    className="text-xs px-2.5 py-1 rounded border border-red-100
-                               text-red-500 hover:bg-red-50">
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {pages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3
-                          border-t border-gray-100">
-            <span className="text-xs text-gray-400">Page {page}/{pages}</span>
-            <div className="flex gap-2">
-              <button onClick={() => setPage(p => Math.max(1,p-1))}
-                disabled={page===1}
-                className="text-xs px-3 py-1 border border-gray-200 rounded
-                           hover:bg-gray-50 disabled:opacity-40">← Prev</button>
-              <button onClick={() => setPage(p => Math.min(pages,p+1))}
-                disabled={page===pages}
-                className="text-xs px-3 py-1 border border-gray-200 rounded
-                           hover:bg-gray-50 disabled:opacity-40">Next →</button>
-            </div>
-          </div>
-        )}
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-lg font-medium text-gray-800">Applications</h2>
+        {/* View toggle */}
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          <button
+            onClick={() => setView('list')}
+            className={`text-xs px-3 py-1.5 rounded-md transition-colors
+              ${view === 'list' ? 'bg-white text-blue-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Danh sách
+          </button>
+          <button
+            onClick={() => setView('by-user')}
+            className={`text-xs px-3 py-1.5 rounded-md transition-colors
+              ${view === 'by-user' ? 'bg-white text-blue-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Theo User
+          </button>
+        </div>
       </div>
+
+      {/* ── List view ── */}
+      {view === 'list' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">
+                  User Name
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">
+                  CV File
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 hidden md:table-cell">
+                  Job
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">
+                  Score
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">
+                  Status
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 hidden lg:table-cell">
+                  Date
+                </th>
+                <th className="px-4 py-3"/>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {apps.map(app => (
+                <tr key={app.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-xs font-medium text-gray-700 max-w-28 truncate">
+                    {app.applicant_name}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-500 max-w-32 truncate">
+                    {app.cv_file}
+                  </td>
+                  <td className="px-4 py-3 text-xs font-medium text-gray-800 max-w-40 truncate hidden md:table-cell">
+                    {app.job_title}
+                  </td>
+                  <td className="px-4 py-3 text-xs font-medium text-blue-600">
+                    {app.score}%
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium
+                      ${STATUS_COLOR[app.status] || STATUS_COLOR.pending}`}>
+                      {app.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-400 hidden lg:table-cell">
+                    {new Date(app.applied_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => handleDelete(app.id)}
+                      className="text-xs px-2.5 py-1 rounded border border-red-100
+                                 text-red-500 hover:bg-red-50">
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {pages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+              <span className="text-xs text-gray-400">Page {page}/{pages}</span>
+              <div className="flex gap-2">
+                <button onClick={() => setPage(p => Math.max(1, p-1))}
+                  disabled={page === 1}
+                  className="text-xs px-3 py-1 border border-gray-200 rounded
+                             hover:bg-gray-50 disabled:opacity-40">← Prev</button>
+                <button onClick={() => setPage(p => Math.min(pages, p+1))}
+                  disabled={page === pages}
+                  className="text-xs px-3 py-1 border border-gray-200 rounded
+                             hover:bg-gray-50 disabled:opacity-40">Next →</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── By-user view ── */}
+      {view === 'by-user' && (
+        <div>
+          {loadingUser ? (
+            <div className="text-center py-12 text-sm text-gray-400">Đang tải...</div>
+          ) : userSummary.length === 0 ? (
+            <div className="text-center py-12 text-sm text-gray-400">Chưa có dữ liệu</div>
+          ) : (
+            <>
+              <p className="text-xs text-gray-400 mb-3">
+                {userSummary.length} người dùng · {userSummary.reduce((s, u) => s + u.total, 0)} đơn ứng tuyển
+              </p>
+              <div className="space-y-2">
+                {userSummary.map((user, i) => {
+                  const isOpen = expanded[user.applicant_name] ?? true
+                  return (
+                    <div key={i} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      {/* Header row */}
+                      <button
+                        onClick={() => toggleExpand(user.applicant_name)}
+                        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-medium flex-shrink-0">
+                            {(user.applicant_name === '—' ? '?' : user.applicant_name.charAt(0)).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-800 truncate">
+                              {user.applicant_name}
+                            </p>
+                            {user.applicant_email && (
+                              <p className="text-xs text-gray-400 truncate">{user.applicant_email}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 flex-shrink-0 ml-3">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
+                            {user.total} đơn
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {user.last_applied ? new Date(user.last_applied).toLocaleDateString('vi-VN') : '—'}
+                          </span>
+                          <span className="text-gray-300 text-xs">{isOpen ? '▲' : '▼'}</span>
+                        </div>
+                      </button>
+
+                      {/* CV files list */}
+                      {isOpen && (
+                        <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+                          <p className="text-xs font-medium text-gray-500 mb-2">
+                            CV đã dùng ({user.cv_files.length} file)
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {user.cv_files.map((f, j) => (
+                              <span key={j}
+                                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5
+                                           bg-white border border-gray-200 rounded-lg text-gray-600">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                  stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                  <polyline points="14 2 14 8 20 8"/>
+                                </svg>
+                                {f}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -10,26 +10,31 @@ def analyze_cv_vs_jd(cv_text        : str,
                      jd_title       : str,
                      jd_description : str,
                      jd_requirements: str,
-                     match_score    : float) -> dict:
+                     match_score    : float,
+                     language       : str = "en") -> dict:
     """
     Phân tích CV vs JD bằng OpenAI GPT-4o Mini.
+    language: "en" | "vi"
     Fallback rule-based nếu chưa có API key.
     """
     if settings.OPENAI_API_KEY and \
        settings.OPENAI_API_KEY not in ("", "sk-your-key-here"):
         return _analyze_with_openai(
             cv_text, jd_title,
-            jd_description, jd_requirements, match_score
+            jd_description, jd_requirements, match_score,
+            language=language
         )
     else:
         print("OPENAI_API_KEY chua set — dung rule-based fallback")
         return _analyze_rule_based(
-            cv_text, jd_title, jd_requirements, match_score
+            cv_text, jd_title, jd_requirements, match_score,
+            language=language
         )
 
 
 def _analyze_with_openai(cv_text, jd_title,
-                         jd_description, jd_requirements, match_score):
+                         jd_description, jd_requirements, match_score,
+                         language="en"):
     """Phân tích bằng OpenAI GPT-4o Mini"""
 
     client = OpenAI(
@@ -37,8 +42,17 @@ def _analyze_with_openai(cv_text, jd_title,
         http_client=httpx.Client()   # bypass openai 1.30 / httpx 0.28 conflict
     )
 
+    lang_instruction = (
+        "Respond entirely in Vietnamese (Tiếng Việt). "
+        "All text values in the JSON must be in Vietnamese."
+        if language == "vi" else
+        "Respond entirely in English. "
+        "All text values in the JSON must be in English."
+    )
+
     prompt = f"""You are an expert HR consultant and career advisor.
 Analyze the candidate CV against the Job Description below.
+{lang_instruction}
 
 === JOB DESCRIPTION ===
 Title       : {jd_title}
@@ -120,15 +134,17 @@ Respond ONLY with this JSON structure, no extra text:
 
     print("Het retry — dung rule-based fallback")
     return _analyze_rule_based(
-        cv_text, jd_title, jd_requirements, match_score
+        cv_text, jd_title, jd_requirements, match_score, language=language
     )
 
 
-def _analyze_rule_based(cv_text, jd_title, jd_requirements, match_score):
+def _analyze_rule_based(cv_text, jd_title, jd_requirements, match_score,
+                        language="en"):
     """Fallback — phân tích bằng keyword matching"""
 
     cv_lower  = cv_text.lower()
     req_lower = jd_requirements.lower()
+    vi        = (language == "vi")
 
     keywords = [
         kw.strip()
@@ -145,13 +161,17 @@ def _analyze_rule_based(cv_text, jd_title, jd_requirements, match_score):
         if kw in cv_lower:
             strengths.append({
                 "skill" : kw.title(),
-                "detail": f"Candidate has hands-on experience with {kw}"
+                "detail": (f"Ứng viên có kinh nghiệm thực tế với {kw}"
+                           if vi else
+                           f"Candidate has hands-on experience with {kw}")
             })
         else:
             missing_skills.append({
                 "skill"     : kw.title(),
                 "importance": "medium",
-                "suggestion": f"Learn {kw} through online courses or projects"
+                "suggestion": (f"Học {kw} qua các khóa online hoặc dự án thực tế"
+                               if vi else
+                               f"Learn {kw} through online courses or projects")
             })
 
     pct = round(match_score * 100, 1)
@@ -160,20 +180,34 @@ def _analyze_rule_based(cv_text, jd_title, jd_requirements, match_score):
     elif pct >= 40: verdict = "Potential Fit"
     else:           verdict = "No Fit"
 
-    return {
-        "overall_assessment": (
+    if vi:
+        assessment = (
+            f"Ứng viên phù hợp {pct}% với yêu cầu vị trí {jd_title}. "
+            f"Tìm thấy {len(strengths)} kỹ năng phù hợp và "
+            f"{len(missing_skills)} kỹ năng cần bổ sung."
+        )
+        recs = [
+            f"Tập trung học: {', '.join([m['skill'] for m in missing_skills[:3]])}",
+            "Bổ sung thêm dự án thực tế để minh chứng kỹ năng",
+            "Điều chỉnh CV để làm nổi bật kinh nghiệm liên quan",
+        ]
+    else:
+        assessment = (
             f"Candidate matches {pct}% of requirements for {jd_title}. "
             f"Found {len(strengths)} matching skills and "
             f"{len(missing_skills)} skills to develop."
-        ),
-        "match_percentage": pct,
-        "strengths"       : strengths[:5],
-        "missing_skills"  : missing_skills[:5],
-        "recommendations" : [
-            f"Focus on: "
-            f"{', '.join([m['skill'] for m in missing_skills[:3]])}",
+        )
+        recs = [
+            f"Focus on: {', '.join([m['skill'] for m in missing_skills[:3]])}",
             "Add more project experience to demonstrate practical skills",
-            "Tailor your CV to highlight relevant experience for this role"
-        ],
-        "verdict": verdict
+            "Tailor your CV to highlight relevant experience for this role",
+        ]
+
+    return {
+        "overall_assessment": assessment,
+        "match_percentage"  : pct,
+        "strengths"         : strengths[:5],
+        "missing_skills"    : missing_skills[:5],
+        "recommendations"   : recs,
+        "verdict"           : verdict,
     }

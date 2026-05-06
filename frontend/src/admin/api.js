@@ -28,4 +28,5 @@ export const adminCreateEmployer = (data)       => ADMIN_API.post('/admin/employ
 export const adminDeleteEmployer = (id)         => ADMIN_API.delete(`/admin/employers/${id}`)
 export const adminGetApps        = (page)       => ADMIN_API.get('/admin/applications', { params: { page } })
 export const adminDeleteApp      = (id)         => ADMIN_API.delete(`/admin/applications/${id}`)
+export const adminGetUserSummary = ()           => ADMIN_API.get('/admin/applications/user-summary')
 export const adminParseJD        = (rawText)    => ADMIN_API.post('/admin/jobs/parse-jd', { raw_text: rawText })

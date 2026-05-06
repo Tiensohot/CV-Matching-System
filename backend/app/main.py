@@ -1,9 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import cv, jobs, applications, admin
+from app.api.routes import cv, jobs, applications, admin, remote_jobs, auth
 from app.core.init_db import init_db
-from app.api.routes import cv, jobs, applications
 
 
 @asynccontextmanager
@@ -22,9 +21,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",    # Vite dev server
-        "http://localhost:3000",    # Create React App (dự phòng)
-        "http://127.0.0.1:5173",   # Vite với IP
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -36,6 +35,9 @@ app.include_router(cv.router)
 app.include_router(jobs.router)
 app.include_router(applications.router)
 app.include_router(admin.router)
+app.include_router(remote_jobs.router)
+app.include_router(auth.router)
+
 
 @app.get("/")
 async def root():

@@ -56,7 +56,7 @@ async def match_jobs(
             raise HTTPException(status_code=400, detail="CV has no embedding")
 
         query = text("""
-            SELECT id, title, description, requirements, created_at,
+            SELECT id, title, description, requirements, email, created_at,
                    1 - (embedding <=> CAST(:embedding AS vector)) AS score
             FROM job_descriptions
             WHERE embedding IS NOT NULL
@@ -77,6 +77,7 @@ async def match_jobs(
                 title       =row.title,
                 description =row.description,
                 requirements=row.requirements,
+                email       =row.email or None,
                 score       =round(float(row.score), 4),
                 label       =score_to_label(float(row.score)),
                 created_at  =row.created_at
@@ -119,6 +120,7 @@ async def get_all_jobs(
             "title"       : job.title,
             "description" : job.description,
             "requirements": job.requirements,
+            "email"       : job.email or "",
             "created_at"  : job.created_at.isoformat() if job.created_at else None,
         }
         for job in jobs
@@ -140,9 +142,10 @@ async def get_job(jd_id: UUID, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{jd_id}/analyze", response_model=AnalysisResponse)
 async def analyze_job(
-    jd_id : UUID,
-    cv_id : UUID,
-    db    : AsyncSession = Depends(get_db)
+    jd_id   : UUID,
+    cv_id   : UUID,
+    language: str  = Query('vi'),
+    db      : AsyncSession = Depends(get_db)
 ):
     cv = await db.get(CV, cv_id)
     if not cv:
@@ -165,7 +168,8 @@ async def analyze_job(
             jd_title       =job.title,
             jd_description =job.description,
             jd_requirements=job.requirements,
-            match_score    =score
+            match_score    =score,
+            language       =language
         )
         return result
     except Exception as e:

@@ -339,11 +339,13 @@ class JDCreate(BaseModel):
     description : str
     requirements: str
     employer_id : UUID
+    email       : Optional[str] = ""   # email nhà tuyển dụng
 
 class JDUpdate(BaseModel):
     title       : Optional[str] = None
     description : Optional[str] = None
     requirements: Optional[str] = None
+    email       : Optional[str] = None
 
 @router.get("/jobs")
 async def get_all_jobs(
@@ -370,6 +372,7 @@ async def get_all_jobs(
                 "title"       : j.title,
                 "description" : j.description,
                 "requirements": j.requirements,
+                "email"       : j.email or "",
                 "employer_id" : str(j.employer_id) if j.employer_id else None,
                 "created_at"  : j.created_at.isoformat() if j.created_at else None,
             }
@@ -387,11 +390,20 @@ async def create_job(
 ):
     content   = f"{data.title}\n{data.description}\n{data.requirements}"
     embedding = get_embedding(content)
+
+    # Fallback: nếu không nhập email JD, dùng email của employer
+    email_val = data.email or None
+    if not email_val:
+        emp = await db.get(Employer, data.employer_id)
+        if emp:
+            email_val = emp.email or None
+
     job = JobDescription(
         employer_id =data.employer_id,
         title       =data.title,
         description =data.description,
         requirements=data.requirements,
+        email       =email_val,
         embedding   =embedding
     )
     db.add(job)
@@ -410,9 +422,16 @@ async def update_job(
     if not job:
         raise HTTPException(status_code=404, detail="JD not found")
 
-    if data.title       : job.title        = data.title
-    if data.description : job.description  = data.description
-    if data.requirements: job.requirements = data.requirements
+    if data.title        is not None: job.title        = data.title
+    if data.description  is not None: job.description  = data.description
+    if data.requirements is not None: job.requirements = data.requirements
+    if data.email is not None:
+        if data.email:
+            job.email = data.email
+        else:
+            # Cleared → fallback to employer's email
+            emp = await db.get(Employer, job.employer_id) if job.employer_id else None
+            job.email = (emp.email or None) if emp else None
 
     # Re-embed nếu có thay đổi
     content      = f"{job.title}\n{job.description}\n{job.requirements}"
@@ -449,7 +468,7 @@ async def get_all_applications(
     offset = (page - 1) * limit
     result = await db.execute(
         select(Application, JobDescription, CV)
-        .join(JobDescription, Application.jd_id == JobDescription.id)
+        .outerjoin(JobDescription, Application.jd_id == JobDescription.id)
         .join(CV, Application.cv_id == CV.id)
         .order_by(Application.applied_at.desc())
         .offset(offset).limit(limit)
@@ -462,18 +481,73 @@ async def get_all_applications(
     return {
         "applications": [
             {
-                "id"        : str(row.Application.id),
-                "status"    : row.Application.status,
-                "score"     : round((row.Application.score or 0) * 100, 1),
-                "applied_at": row.Application.applied_at.isoformat(),
-                "job_title" : row.JobDescription.title,
-                "cv_file"   : row.CV.filename,
+                "id"            : str(row.Application.id),
+                "status"        : row.Application.status,
+                "score"         : round((row.Application.score or 0) * 100, 1),
+                "applied_at"    : row.Application.applied_at.isoformat(),
+                "job_title"     : (row.JobDescription.title if row.JobDescription
+                                   else row.Application.job_title or "Remote Job"),
+                "cv_file"       : row.CV.filename,
+                "applicant_name": row.Application.applicant_name or "—",
+                "source"        : row.Application.source or "database",
             }
             for row in rows
         ],
         "total": total,
         "pages": math.ceil(total / limit)
     }
+
+
+@router.get("/applications/user-summary")
+async def get_user_summary(
+    db   : AsyncSession = Depends(get_db),
+    email: str          = Depends(verify_token)
+):
+    """Thống kê ứng viên: mỗi username + danh sách file CV đã dùng."""
+    from collections import OrderedDict
+
+    result = await db.execute(
+        select(
+            Application.applicant_name,
+            Application.applicant_email,
+            CV.filename,
+            Application.applied_at,
+            Application.source,
+        )
+        .join(CV, Application.cv_id == CV.id)
+        .order_by(Application.applied_at.desc())
+    )
+    rows = result.all()
+
+    users: OrderedDict = OrderedDict()
+    for row in rows:
+        name      = (row.applicant_name  or "").strip()
+        email_val = (row.applicant_email or "").strip()
+        key       = name or email_val or "Ẩn danh"
+
+        if key not in users:
+            users[key] = {
+                "applicant_name" : name or "—",
+                "applicant_email": email_val,
+                "cv_files"       : [],
+                "total"          : 0,
+                "last_applied"   : row.applied_at,
+            }
+        if row.filename not in users[key]["cv_files"]:
+            users[key]["cv_files"].append(row.filename)
+        users[key]["total"] += 1
+
+    return [
+        {
+            "applicant_name" : data["applicant_name"],
+            "applicant_email": data["applicant_email"],
+            "cv_files"       : data["cv_files"],
+            "total"          : data["total"],
+            "last_applied"   : data["last_applied"].isoformat() if data["last_applied"] else None,
+        }
+        for data in users.values()
+    ]
+
 
 @router.delete("/applications/{app_id}")
 async def delete_application(

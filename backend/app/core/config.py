@@ -13,11 +13,12 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     MAIL_USERNAME: str = ""
     MAIL_PASSWORD: str = ""
-    MAIL_FROM    : str = ""
-    MAIL_SERVER  : str = "smtp.gmail.com"
-    MAIL_PORT    : int = 587
+    MAIL_FROM      : str = ""
+    MAIL_SERVER    : str = "smtp.gmail.com"
+    MAIL_PORT      : int = 587
+    MAIL_FROM_NAME : str = "CV Matching System"
     ADMIN_EMAIL   : str = "tienvodich456@gmail.com"
-    ADMIN_PASSWORD: str = "Tien2252004"
+    ADMIN_PASSWORD: str = "0946266811"
     class Config:
         env_file = str(env_path)
         extra = "ignore"        # Bỏ qua các field thừa trong .env
