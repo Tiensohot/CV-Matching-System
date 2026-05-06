@@ -1,32 +1,12 @@
-import os
-import shutil
 from sqlalchemy import text
 from app.core.database import engine, Base
 from app.models import models  # noqa: F401 — import để Base nhận diện các bảng
-
-UPLOAD_DIR = "uploads"
 
 
 async def init_db():
     async with engine.begin() as conn:
         # Bật extension pgvector
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-
-        # ── Phương án B: Xóa toàn bộ dữ liệu CVs và Applications cũ ────────
-        # Xóa applications trước (FK → cvs)
-        await conn.execute(text("DELETE FROM applications"))
-        # Xóa cvs
-        await conn.execute(text("DELETE FROM cvs"))
-
-        # Xóa file vật lý trong thư mục uploads/
-        if os.path.isdir(UPLOAD_DIR):
-            for fname in os.listdir(UPLOAD_DIR):
-                fpath = os.path.join(UPLOAD_DIR, fname)
-                if os.path.isfile(fpath):
-                    try:
-                        os.remove(fpath)
-                    except Exception:
-                        pass  # Bỏ qua lỗi xóa file
 
         # ── Tạo / cập nhật schema ────────────────────────────────────────────
         # Tạo tất cả bảng mới (không xóa bảng cũ)

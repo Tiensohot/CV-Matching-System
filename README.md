@@ -2,8 +2,7 @@
 
 Hệ thống tuyển dụng thông minh tự động so khớp hồ sơ ứng viên (CV) với mô tả công việc (JD) sử dụng Semantic Embedding và Large Language Model.
 
-> **Đồ án tốt nghiệp** — Trường Đại học Công nghiệp Hà Nội (HAUI) - Bùi Đức Tiến - 2022606559
-
+> **Đồ án tốt nghiệp** — Trường Đại học Công nghiệp Hà Nội (HAUI) — Bùi Đức Tiến — 2022606559 — 2026
 
 ---
 
@@ -28,19 +27,23 @@ Tuyển dụng truyền thống tốn nhiều thời gian đọc hồ sơ thủ 
 - Sử dụng **Sentence-BERT fine-tuned** để tạo vector embedding 768 chiều cho CV và JD, hiểu ngữ nghĩa thay vì từ khóa đơn thuần
 - Lưu vector vào **PostgreSQL + pgvector** để tìm kiếm top-K trong thời gian thực
 - Gọi **GPT-4o-mini** phân tích chi tiết từng cặp CV-JD, trả về điểm mạnh, thiếu sót và gợi ý cụ thể
+- Hỗ trợ **tìm việc remote toàn cầu** từ RemoteOK.com theo thời gian thực
 
 ---
 
 ## Tính năng chính
 
 **Dành cho ứng viên:**
-- Upload CV (PDF/DOCX), hỗ trợ OCR cho file scan
+- Đăng ký / đăng nhập tài khoản cá nhân (JWT)
+- Upload CV (PDF/DOCX), hỗ trợ OCR cho file scan — CV riêng tư theo từng tài khoản
 - Tự động tìm top-10 công việc phù hợp nhất theo độ tương đồng ngữ nghĩa
 - Phân tích chi tiết CV vs JD bằng GPT-4o-mini: điểm mạnh, kỹ năng còn thiếu, khuyến nghị
-- Xem lịch sử và trạng thái các đơn ứng tuyển
+- Nộp đơn ứng tuyển kèm cover letter, gửi email tự động tới nhà tuyển dụng
+- Xem lịch sử và trạng thái các đơn ứng tuyển cá nhân
+- Tab **Remote Jobs**: tìm kiếm việc làm remote toàn cầu từ RemoteOK.com theo thời gian thực
 
 **Dành cho Admin:**
-- Quản lý tin tuyển dụng (JD): tạo thủ công hoặc **auto-parse từ text thô**
+- Quản lý tin tuyển dụng (JD): tạo thủ công hoặc **auto-parse từ text thô** bằng AI
 - Quản lý nhà tuyển dụng (employer)
 - Theo dõi toàn bộ đơn ứng tuyển và cập nhật trạng thái
 - Dashboard thống kê tổng quan
@@ -54,39 +57,48 @@ Tuyển dụng truyền thống tốn nhiều thời gian đọc hồ sơ thủ 
 │                     FRONTEND (React)                     │
 │  ┌──────────────┐        ┌──────────────────────────┐   │
 │  │  User App    │        │      Admin Panel          │   │
-│  │  (3-step     │        │  (Dashboard / Jobs /      │   │
-│  │   wizard)    │        │   Employers / Apps)       │   │
+│  │  (Login /    │        │  (Dashboard / Jobs /      │   │
+│  │   Upload /   │        │   Employers / Apps)       │   │
+│  │   Remote)    │        │                           │   │
 │  └──────┬───────┘        └─────────────┬─────────────┘   │
 └─────────┼───────────────────────────────┼───────────────┘
-          │ HTTP (Axios)                  │ HTTP + JWT
+          │ HTTP + JWT (Axios)            │ HTTP + JWT
           ▼                               ▼
 ┌─────────────────────────────────────────────────────────┐
 │                  BACKEND (FastAPI)                        │
-│  /cv   /jobs   /applications   /admin                    │
+│  /auth  /cv  /jobs  /applications  /admin  /remote       │
 │                                                          │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
 │  │ cv_service  │  │matching_svc  │  │  rag_service   │  │
 │  │ (PDF/DOCX   │  │ (SBERT embed │  │ (GPT-4o-mini   │  │
 │  │  extract)   │  │  + cosine)   │  │  analysis)     │  │
 │  └─────────────┘  └──────────────┘  └────────────────┘  │
+│  ┌─────────────┐  ┌──────────────┐                       │
+│  │email_service│  │ remote_svc   │                       │
+│  │ (SMTP gửi   │  │ (RemoteOK    │                       │
+│  │  CV qua     │  │  proxy)      │                       │
+│  │  email)     │  │              │                       │
+│  └─────────────┘  └──────────────┘                       │
 └──────────────────────────┬──────────────────────────────┘
                            │ SQLAlchemy async
                            ▼
 ┌─────────────────────────────────────────────────────────┐
 │              PostgreSQL 16 + pgvector                    │
-│  Tables: employers, job_descriptions, cvs, applications  │
+│  Tables: users, employers, job_descriptions,             │
+│          cvs, applications                               │
 │  Vector columns: embedding VECTOR(768)                   │
 │  Operator: <=> (cosine distance)                         │
 └─────────────────────────────────────────────────────────┘
 ```
 
 **Luồng matching CV-JD:**
-1. Ứng viên upload CV (PDF/DOCX)
-2. Backend trích xuất text → làm sạch → SBERT encode → vector 768 chiều
+1. Ứng viên đăng nhập → upload CV (PDF/DOCX)
+2. Backend trích xuất text → làm sạch → SBERT encode → vector 768 chiều → lưu DB
 3. pgvector tìm top-10 JD gần nhất (`ORDER BY embedding <=> :cv_vector LIMIT 10`)
 4. Trả về danh sách jobs với score + label (Good Fit / Potential Fit / No Fit)
 5. Ứng viên chọn JD → GPT-4o-mini phân tích chi tiết
 6. Nhận phản hồi JSON: strengths, missing skills, recommendations, verdict
+7. Ứng viên nộp đơn → email tự động gửi CV tới nhà tuyển dụng
 
 ---
 
@@ -98,11 +110,13 @@ Tuyển dụng truyền thống tốn nhiều thời gian đọc hồ sơ thủ 
 | **Frontend** | React 19 + Vite 8 + Tailwind CSS 3 |
 | **Database** | PostgreSQL 16 + pgvector |
 | **Embedding Model** | Sentence-BERT fine-tuned (`sbert-cv-jd-hardneg`) |
-| **LLM Analysis** | OpenAI GPT-4o-mini |
+| **LLM Analysis** | OpenAI GPT-4o-mini / Groq / Gemini (tùy chọn) |
 | **ORM** | SQLAlchemy 2.0 (async) |
-| **Auth** | JWT (python-jose) + OAuth2 |
+| **Auth** | JWT (python-jose) + OAuth2 — cả user lẫn admin |
+| **Email** | SMTP (smtplib) gửi CV kèm file đính kèm |
 | **File Parsing** | pdfplumber, python-docx, pytesseract OCR |
-| **Containerization** | Docker Compose |
+| **Remote Jobs** | RemoteOK.com public API (proxy qua backend) |
+| **Containerization** | Docker Compose (3 services) |
 
 ---
 
@@ -111,7 +125,7 @@ Tuyển dụng truyền thống tốn nhiều thời gian đọc hồ sơ thủ 
 ### Yêu cầu
 
 - Docker & Docker Compose
-- OpenAI API Key (tùy chọn — có fallback rule-based)
+- OpenAI / Groq / Gemini API Key (tùy chọn — có fallback rule-based)
 
 ### Chạy với Docker Compose
 
@@ -127,12 +141,29 @@ cp .env.example .env
 
 ```env
 DATABASE_URL=postgresql+asyncpg://postgres:password@db:5432/cv_matching
-OPENAI_API_KEY=sk-proj-...
-SECRET_KEY=your-secret-key-here
+POSTGRES_DB=cv_matching
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=password
+
+SECRET_KEY=haui-cv-matching-2026
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=480
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your-admin-password
+
+ADMIN_EMAIL=admin@cvmatching.com
+ADMIN_PASSWORD=admin123
+
+# Để trống nếu không dùng phân tích AI
+OPENAI_API_KEY=
+GROQ_API_KEY=
+GEMINI_API_KEY=
+
+# Để trống nếu không dùng tính năng gửi email
+MAIL_USERNAME=
+MAIL_PASSWORD=
+MAIL_FROM=
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_FROM_NAME=CV Matching System
 ```
 
 **3. Khởi động toàn bộ hệ thống:**
@@ -143,10 +174,22 @@ docker compose up --build
 
 | Service | URL |
 |---------|-----|
-| Frontend (User) | http://localhost:5173 |
+| Frontend (Ứng viên) | http://localhost:5173 |
 | Frontend (Admin) | http://localhost:5173/admin |
 | Backend API | http://localhost:8000 |
 | API Docs (Swagger) | http://localhost:8000/docs |
+
+**4. (Tùy chọn) Khôi phục dữ liệu mẫu:**
+
+```powershell
+docker exec -i cv_matching_db psql -U postgres cv_matching < backup.sql
+```
+
+**Tạo backup từ database hiện tại:**
+
+```powershell
+docker exec cv_matching_db pg_dump -U postgres cv_matching > backup.sql
+```
 
 ### Chạy thủ công (Development)
 
@@ -179,7 +222,11 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ```
 cv-matching-system/
 ├── .env                          # Biến môi trường
+├── .env.example                  # Mẫu cấu hình
 ├── docker-compose.yml            # 3 services: db, backend, frontend
+├── backup.sql                    # Dữ liệu mẫu (khôi phục tùy chọn)
+│
+├── uploads/                      # File CV upload (mount vào host, bền vững)
 │
 ├── backend/
 │   ├── requirements.txt
@@ -189,46 +236,56 @@ cv-matching-system/
 │       │   ├── config.py         # Pydantic Settings từ .env
 │       │   ├── database.py       # SQLAlchemy async engine
 │       │   ├── auth.py           # JWT + password hashing
-│       │   └── init_db.py        # Tạo bảng khi startup
+│       │   └── init_db.py        # Tạo/migrate schema khi startup
 │       ├── models/
 │       │   ├── models.py         # ORM models
 │       │   └── schemas.py        # Pydantic schemas
 │       ├── services/
 │       │   ├── matching_service.py  # SBERT embed + cosine similarity
 │       │   ├── cv_service.py        # PDF/DOCX extract + OCR
-│       │   └── rag_service.py       # GPT-4o-mini analysis
+│       │   ├── rag_service.py       # GPT-4o-mini / Groq / Gemini analysis
+│       │   ├── email_service.py     # Gửi CV qua SMTP
+│       │   └── remote.py            # Proxy RemoteOK.com API
 │       └── api/routes/
-│           ├── cv.py
-│           ├── jobs.py
-│           ├── applications.py
-│           └── admin.py             # Admin CRUD + JD parser
+│           ├── auth.py           # Đăng ký / đăng nhập user
+│           ├── cv.py             # Upload, xem, xóa CV
+│           ├── jobs.py           # Matching + phân tích chi tiết
+│           ├── applications.py   # Nộp đơn + lịch sử
+│           ├── remote.py         # Remote jobs từ RemoteOK
+│           └── admin.py          # Admin CRUD + JD parser
 │
-├── frontend/
-│   ├── package.json
-│   └── src/
-│       ├── App.jsx               # 3-step wizard (user app)
-│       ├── services/api.js       # Axios client
-│       ├── admin/
-│       │   ├── AdminApp.jsx      # Admin panel
-│       │   └── api.js            # Admin Axios (JWT interceptor)
-│       └── components/
-│           ├── JobCard.jsx
-│           ├── AnalysisPanel.jsx
-│           └── UploadCV.jsx
-│
-└── uploads/                      # CV files upload
+└── frontend/
+    ├── package.json
+    └── src/
+        ├── App.jsx               # User app (Login / Upload / Match / Remote)
+        ├── services/api.js       # Axios client (user)
+        ├── admin/
+        │   ├── AdminApp.jsx      # Admin panel
+        │   └── api.js            # Admin Axios (JWT interceptor)
+        └── components/
+            ├── JobCard.jsx
+            ├── AnalysisPanel.jsx
+            └── UploadCV.jsx
 ```
 
 ---
 
 ## API Reference
 
+### Auth — `/auth`
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `POST` | `/auth/register` | Đăng ký tài khoản ứng viên |
+| `POST` | `/auth/login` | Đăng nhập, nhận JWT |
+| `GET` | `/auth/me` | Thông tin user hiện tại |
+
 ### CV — `/cv`
 
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
-| `POST` | `/cv/upload` | Upload CV, trích xuất text, tạo embedding |
-| `GET` | `/cv/all` | Danh sách tất cả CVs |
+| `POST` | `/cv/upload` | Upload CV (riêng theo user), trích xuất text, tạo embedding |
+| `GET` | `/cv/my` | Danh sách CV của user hiện tại |
 | `GET` | `/cv/{cv_id}` | Chi tiết một CV |
 | `DELETE` | `/cv/{cv_id}` | Xóa CV |
 
@@ -237,7 +294,7 @@ cv-matching-system/
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
 | `GET` | `/jobs/match?cv_id=&top_k=10` | **Top-K semantic matching** |
-| `POST` | `/jobs/{jd_id}/analyze?cv_id=` | **GPT-4o-mini phân tích chi tiết** |
+| `POST` | `/jobs/{jd_id}/analyze?cv_id=` | **AI phân tích chi tiết CV vs JD** |
 | `GET` | `/jobs/all?page=&limit=` | Danh sách JDs (phân trang) |
 | `GET` | `/jobs/{jd_id}` | Chi tiết JD |
 
@@ -245,20 +302,26 @@ cv-matching-system/
 
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
-| `POST` | `/applications/{jd_id}/apply?cv_id=` | Nộp đơn ứng tuyển |
-| `GET` | `/applications/history/{cv_id}` | Lịch sử ứng tuyển |
+| `POST` | `/applications/{jd_id}/apply?cv_id=` | Nộp đơn + gửi email CV tới nhà tuyển dụng |
+| `GET` | `/applications/my` | Lịch sử ứng tuyển của user hiện tại |
 | `PATCH` | `/applications/{app_id}/status` | Cập nhật trạng thái |
 
-### Admin — `/admin` *(yêu cầu JWT)*
+### Remote Jobs — `/remote`
 
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
-| `POST` | `/admin/login` | Đăng nhập, nhận JWT |
+| `GET` | `/remote/jobs?search=&limit=` | Tìm việc remote từ RemoteOK.com |
+
+### Admin — `/admin` *(yêu cầu JWT admin)*
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `POST` | `/admin/login` | Đăng nhập admin, nhận JWT |
 | `GET` | `/admin/stats` | Thống kê tổng quan |
 | `GET/POST` | `/admin/employers` | Quản lý employers |
 | `GET/POST` | `/admin/jobs` | Quản lý JDs |
 | `PUT` | `/admin/jobs/{id}` | Cập nhật JD (tự re-embed) |
-| `POST` | `/admin/jobs/parse-jd` | **Auto-parse raw JD text** |
+| `POST` | `/admin/jobs/parse-jd` | **Auto-parse raw JD text bằng AI** |
 | `GET` | `/admin/applications` | Danh sách tất cả applications |
 
 ---
@@ -267,19 +330,24 @@ cv-matching-system/
 
 **ERD:**
 ```
-Employer (1) ──── (N) JobDescription (1) ──── (N) Application (N) ──── (1) CV
+User (1) ──── (N) CV (1) ──── (N) Application (N) ──── (1) JobDescription (N) ──── (1) Employer
 ```
 
 **Bảng chính:**
 
 | Bảng | Cột quan trọng |
 |------|---------------|
+| `users` | `id` (UUID), `email`, `hashed_password`, `full_name`, `is_admin` |
 | `employers` | `id` (UUID), `name`, `email`, `company_info` |
-| `job_descriptions` | `id`, `employer_id` (FK), `title`, `description`, `requirements`, `embedding VECTOR(768)` |
-| `cvs` | `id`, `filename`, `raw_text`, `embedding VECTOR(768)` |
-| `applications` | `id`, `cv_id` (FK), `jd_id` (FK), `score` (float), `status` |
+| `job_descriptions` | `id`, `employer_id` (FK), `title`, `description`, `requirements`, `email`, `embedding VECTOR(768)` |
+| `cvs` | `id`, `user_id` (FK), `filename`, `raw_text`, `embedding VECTOR(768)`, `uploaded_at` |
+| `applications` | `id`, `cv_id` (FK), `jd_id` (FK), `user_id` (FK), `score`, `status`, `applicant_name`, `applicant_email`, `employer_email`, `cover_message`, `source`, `job_title`, `company_name` |
 
 **Trạng thái application:** `pending` → `sent` → `viewed` → `interview` → `accepted` / `rejected`
+
+**Lưu trữ file CV:**
+- **Database**: metadata, nội dung text, vector embedding
+- **Filesystem**: file gốc tại `./uploads/` (mount vào host, bền vững qua các lần restart)
 
 **Vector search:**
 ```sql
@@ -308,12 +376,12 @@ LIMIT :top_k;
 | ≥ 0.40 | Potential Fit |
 | < 0.40 | No Fit |
 
-### GPT-4o-mini (Analysis)
+### AI Analysis (GPT-4o-mini / Groq / Gemini)
 
 - Temperature: `0.3`, Max tokens: `1500`
 - Response format: `json_object` (enforced JSON)
-- Retry: 3 lần, exponential backoff (30s / 60s / 90s)
-- Fallback rule-based khi không có API key
+- Retry: 3 lần, exponential backoff
+- Fallback rule-based khi không cấu hình API key
 
 **Output mẫu:**
 ```json
@@ -337,4 +405,4 @@ LIMIT :top_k;
 
 ---
 
-*Đồ án tốt nghiệp — 04/2026*
+*Đồ án tốt nghiệp — 05/2026*
