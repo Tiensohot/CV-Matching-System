@@ -2,7 +2,6 @@
 
 Hệ thống tuyển dụng thông minh tự động so khớp hồ sơ ứng viên (CV) với mô tả công việc (JD) sử dụng Semantic Embedding và Large Language Model.
 
-> **Đồ án tốt nghiệp** — Trường Đại học Công nghiệp Hà Nội (HAUI) — Bùi Đức Tiến — 2022606559 — 2026
 
 ---
 
